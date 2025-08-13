@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>神経衰弱アプリ</title>
+<style>
+:root {
+  --card-w: 80px;
+  --card-h: 100px;
+}
+body {
+  font-family: sans-serif;
+  text-align: center;
+  background-color: #f0f0f0;
+  padding: 10px;
+}
+#wordEditor {
+  margin-bottom: 15px;
+}
+#wordList {
+  width: 90%;
+  max-width: 400px;
+  height: 100px;
+}
+#game {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  justify-items: center;
+  max-width: calc(var(--card-w) * 4 + 40px);
+  margin: auto;
+}
+.card {
+  width: var(--card-w);
+  height: var(--card-h);
+  background-color: #2196f3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5em;
+  cursor: pointer;
+  border-radius: 8px;
+  color: black;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  user-select: none;
+}
+.card.hidden {
+  background-color: #555;
+  color: transparent;
+}
+.card.matched {
+  visibility: hidden;
+}
+#status {
+  margin-top: 15px;
+  font-size: 1.2em;
+}
+@media (max-width: 500px) {
+  :root {
+    --card-w: 60px;
+    --card-h: 80px;
+  }
+}
+</style>
+</head>
+<body>
+
+<h1>神経衰弱</h1>
+
+<div id="wordEditor">
+  <p>8個のことば（カンマまたは改行で区切る）</p>
+  <textarea id="wordList"></textarea><br>
+  <button id="applyWords">ことばを適用</button>
+  <button id="resetWords">デフォルトに戻す</button>
+</div>
+
+<div id="status">
+  プレイヤー: <span id="playerScore">0</span> |
+  PC: <span id="pcScore">0</span>
+</div>
+<div id="game"></div>
+
+<button id="resetGame">リセット</button>
+<button id="newGame">シャッフル & 新しいゲーム</button>
+
+<script>
+let defaultWords = ["うんこ","あんこ","ねこ","いぬ","さる","ぱんだ","ぞう","ごりら"];
+let words = [...defaultWords];
+let deck = [];
+let flipped = [];
+let playerScore = 0;
+let pcScore = 0;
+let playerTurn = true;
+let lock = false;
+
+const gameContainer = document.getElementById("game");
+const playerScoreEl = document.getElementById("playerScore");
+const pcScoreEl = document.getElementById("pcScore");
+const wordListEl = document.getElementById("wordList");
+
+function saveWordsToStorage() {
+  localStorage.setItem("shinkeiWords", JSON.stringify(words));
+}
+
+function loadWordsFromStorage() {
+  const saved = localStorage.getItem("shinkeiWords");
+  if (saved) {
+    words = JSON.parse(saved);
+  }
+}
+
+function renderWordList() {
+  wordListEl.value = words.join("\n");
+}
+
+function initDeck() {
+  deck = [];
+  words.forEach(w => {
+    deck.push(w);
+    deck.push(w);
+  });
+}
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+}
+
+function renderGame() {
+  gameContainer.innerHTML = "";
+  deck.forEach((word, idx) => {
+    const card = document.createElement("div");
+    card.classList.add("card", "hidden");
+    card.dataset.word = word;
+    card.dataset.index = idx;
+    card.textContent = word;
+    card.addEventListener("click", () => onCardClick(card));
+    gameContainer.appendChild(card);
+  });
+}
+
+function onCardClick(card) {
+  if (lock || !playerTurn || !card.classList.contains("hidden")) return;
+  flipCard(card);
+  flipped.push(card);
+  if (flipped.length === 2) {
+    lock = true;
+    setTimeout(checkMatch, 800);
+  }
+}
+
+function flipCard(card) {
+  card.classList.remove("hidden");
+}
+
+function hideCard(card) {
+  card.classList.add("hidden");
+}
+
+function checkMatch() {
+  const [c1, c2] = flipped;
+  if (c1.dataset.word === c2.dataset.word) {
+    c1.classList.add("matched");
+    c2.classList.add("matched");
+    if (playerTurn) {
+      playerScore++;
+      playerScoreEl.textContent = playerScore;
+      if (!isGameOver()) {
+        lock = false;
+        flipped = [];
+        return; // same player's turn
+      }
+    } else {
+      pcScore++;
+      pcScoreEl.textContent = pcScore;
+      if (!isGameOver()) {
+        lock = false;
+        flipped = [];
+        setTimeout(pcTurn, 500);
+        return;
+      }
+    }
+  } else {
+    setTimeout(() => {
+      hideCard(c1);
+      hideCard(c2);
+    }, 500);
+    playerTurn = !playerTurn;
+  }
+  flipped = [];
+  lock = false;
+  if (!playerTurn && !isGameOver()) {
+    setTimeout(pcTurn, 500);
+  }
+}
+
+function pcTurn() {
+  if (playerTurn || isGameOver()) return;
+  let hiddenCards = [...document.querySelectorAll(".card.hidden")];
+  if (hiddenCards.length < 2) return;
+  let choice1 = hiddenCards[Math.floor(Math.random() * hiddenCards.length)];
+  flipCard(choice1);
+  hiddenCards = hiddenCards.filter(c => c !== choice1);
+  let choice2 = hiddenCards[Math.floor(Math.random() * hiddenCards.length)];
+  flipCard(choice2);
+  flipped.push(choice1, choice2);
+  lock = true;
+  setTimeout(checkMatch, 800);
+}
+
+function isGameOver() {
+  return document.querySelectorAll(".card.hidden").length === 0;
+}
+
+document.getElementById("resetGame").addEventListener("click", () => {
+  playerScore = 0; pcScore = 0;
+  playerScoreEl.textContent = playerScore;
+  pcScoreEl.textContent = pcScore;
+  playerTurn = true;
+  lock = false;
+  flipped = [];
+  renderGame();
+});
+
+document.getElementById("newGame").addEventListener("click", () => {
+  playerScore = 0; pcScore = 0;
+  playerScoreEl.textContent = playerScore;
+  pcScoreEl.textContent = pcScore;
+  playerTurn = true;
+  lock = false;
+  flipped = [];
+  initDeck();
+  shuffle(deck);
+  renderGame();
+});
+
+document.getElementById("applyWords").addEventListener("click", () => {
+  let input = wordListEl.value.trim();
+  if (!input) return;
+  let list = input.split(/[\n,]+/).map(w => w.trim()).filter(w => w);
+  if (list.length !== 8) {
+    alert("ことばは8個ちょうど入力してください。");
+    return;
+  }
+  words = list;
+  saveWordsToStorage();
+  initDeck();
+  shuffle(deck);
+  playerScore = 0; pcScore = 0;
+  playerScoreEl.textContent = playerScore;
+  pcScoreEl.textContent = pcScore;
+  playerTurn = true;
+  lock = false;
+  flipped = [];
+  renderGame();
+});
+
+document.getElementById("resetWords").addEventListener("click", () => {
+  words = [...defaultWords];
+  saveWordsToStorage();
+  renderWordList();
+  initDeck();
+  shuffle(deck);
+  renderGame();
+});
+
+loadWordsFromStorage();
+renderWordList();
+initDeck();
+shuffle(deck);
+renderGame();
+</script>
+
+</body>
+</html>
