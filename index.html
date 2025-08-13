@@ -1,279 +1,372 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>神経衰弱アプリ</title>
-<style>
-:root {
-  --card-w: 80px;
-  --card-h: 100px;
-}
-body {
-  font-family: sans-serif;
-  text-align: center;
-  background-color: #f0f0f0;
-  padding: 10px;
-}
-#wordEditor {
-  margin-bottom: 15px;
-}
-#wordList {
-  width: 90%;
-  max-width: 400px;
-  height: 100px;
-}
-#game {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  justify-items: center;
-  max-width: calc(var(--card-w) * 4 + 40px);
-  margin: auto;
-}
-.card {
-  width: var(--card-w);
-  height: var(--card-h);
-  background-color: #2196f3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5em;
-  cursor: pointer;
-  border-radius: 8px;
-  color: black;
-  writing-mode: vertical-rl;
-  text-orientation: upright;
-  user-select: none;
-}
-.card.hidden {
-  background-color: #555;
-  color: transparent;
-}
-.card.matched {
-  visibility: hidden;
-}
-#status {
-  margin-top: 15px;
-  font-size: 1.2em;
-}
-@media (max-width: 500px) {
-  :root {
-    --card-w: 60px;
-    --card-h: 80px;
-  }
-}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>神経衰弱（ひらがなペア）</title>
+  <style>
+    :root{
+      /* 4列×4行が常に画面内に収まるよう自動調整（最大90px） */
+      --gap: clamp(8px, 2.5vw, 16px);
+      --card-w: min(90px, calc((96vw - 3*var(--gap)) / 4));
+      --card-h: calc(var(--card-w) * 1.33);
+      --accent: #4f46e5;
+      --back: #0ea5e9;
+      --front: #ffffff;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: system-ui, -apple-system, "BIZ UDPGothic", "Noto Sans JP", sans-serif;
+      background: #f5f7fb; color:#111827; display:flex; flex-direction:column; align-items:center; min-height:100vh;
+    }
+    header{ width: min(960px, 96vw); padding:16px 12px; }
+    h1{ margin: 8px 0 4px; font-size: clamp(20px, 3.6vw, 28px); }
+    .sub{ color:#6b7280; margin:0 0 8px; }
+
+    .hud{
+      width: min(960px, 96vw);
+      display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; gap:8px;
+      background:#fff; border-radius:16px; padding:12px 14px; box-shadow: 0 6px 20px rgba(0,0,0,.05);
+    }
+    .score{ display:flex; gap:10px; align-items:center; justify-content:flex-start; font-weight:700; }
+    .score .you{ color:#065f46 }
+    .score .pc{ color:#7c2d12 }
+    .turn{ text-align:center; font-weight:700; }
+    .turn .badge{ display:inline-block; padding:4px 10px; border-radius:999px; background:#eef2ff; color:#3730a3; }
+    .actions{ width:min(960px,96vw); display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+    button{ cursor:pointer; border:none; border-radius:999px; padding:10px 14px; font-weight:700; background: var(--accent); color:white; }
+    button.secondary{ background:#e5e7eb; color:#111827; }
+
+    main{ width:min(960px, 96vw); margin:14px auto; display:flex; justify-content:center; }
+    /* 画面幅が狭い端末でも折り返して収める */
+    .grid{ display:grid; grid-template-columns: repeat(4, var(--card-w)); grid-template-rows: repeat(4, var(--card-h)); gap: var(--gap); justify-content:center; }
+
+    .card{ width:var(--card-w); height:var(--card-h); perspective: 900px; }
+    .inner{ position:relative; width:100%; height:100%; transform-style:preserve-3d; transition: transform .4s ease; }
+    .card.flipped .inner, .card.matched .inner{ transform: rotateY(180deg); }
+
+    .face{ position:absolute; inset:0; border-radius:14px; display:flex; align-items:center; justify-content:center; backface-visibility:hidden; box-shadow: 0 8px 18px rgba(0,0,0,.08); padding:6px; }
+    .front{ background: var(--front); transform: rotateY(180deg); border: 2px solid #e5e7eb; }
+    .front .txt{ font-size: clamp(14px, 5vw, 24px); font-weight:900; letter-spacing: .03em; color:#000; text-align:center; word-break: keep-all; line-height:1.1; writing-mode: vertical-rl; text-orientation: upright; }
+
+    .back{ background: linear-gradient(135deg, var(--back), #22c55e);
+           color:white; font-weight:900; border: 2px solid rgba(255,255,255,.35); }
+    .back .dot{ width:60%; height:60%; border: 3px dashed rgba(255,255,255,.7); border-radius:12px; display:flex; align-items:center; justify-content:center; }
+    .back .mini{ font-size: clamp(12px, 3.6vw, 16px); opacity:.9 }
+
+    .status{ width:min(960px, 96vw); margin:6px auto 2px; text-align:center; color:#374151; min-height:1.6em; }
+
+    .footer{ margin: 10px 0 24px; color:#6b7280; font-size:13px; }
+
+    /* === Words Editor === */
+    .words-editor{ width:min(960px,96vw); margin:8px auto 0; background:#fff; border-radius:16px; box-shadow: 0 6px 20px rgba(0,0,0,.05); padding:12px; }
+    .words-editor summary{ cursor:pointer; font-weight:700; }
+    .words-editor .row{ display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+    .words-editor textarea{ flex:1 1 520px; min-height:70px; font-size:15px; padding:10px; border:1px solid #e5e7eb; border-radius:10px; resize:vertical; }
+    .hint{ color:#6b7280; font-size:12px; }
+    .pill{ display:inline-block; padding:2px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; font-size:12px; margin-left:4px; }
+  </style>
 </head>
 <body>
+  <header>
+    <h1>神経衰弱（ひらがなペア）</h1>
+    <p class="sub">プレイヤー vs PC｜同じひらがなのペアを見つけよう！</p>
+  </header>
 
-<h1>神経衰弱</h1>
+  <div class="hud" role="region" aria-label="スコア">
+    <div class="score" id="scoreYou">👤 あなた：<span class="you" id="youPts">0</span></div>
+    <div class="turn"><span class="badge" id="turnBadge">あなたの番</span></div>
+    <div class="score" id="scorePc" style="justify-content:flex-end">🤖 PC：<span class="pc" id="pcPts">0</span></div>
+  </div>
 
-<div id="wordEditor">
-  <p>8個のことば（カンマまたは改行で区切る）</p>
-  <textarea id="wordList"></textarea><br>
-  <button id="applyWords">ことばを適用</button>
-  <button id="resetWords">デフォルトに戻す</button>
-</div>
+  <details class="words-editor">
+    <summary>ことばを編集 <span class="pill" id="wordCountPill">8語</span></summary>
+    <div class="row">
+      <textarea id="wordsInput" placeholder="例：うんこ, あんこ, ねこ, いぬ, さる, ぱんだ, ぞう, ごりら"></textarea>
+    </div>
+    <div class="row">
+      <button id="btnApplyWords">ことばを適用</button>
+      <button id="btnResetWords" class="secondary">デフォルトに戻す</button>
+      <span class="hint">※ 8語ちょうどで入力してください（各2枚で16枚になります）。改行やカンマ区切りどちらでもOK。</span>
+    </div>
+  </details>
 
-<div id="status">
-  プレイヤー: <span id="playerScore">0</span> |
-  PC: <span id="pcScore">0</span>
-</div>
-<div id="game"></div>
+  <main>
+    <div class="grid" id="board" aria-live="polite" aria-label="カードボード"></div>
+  </main>
 
-<button id="resetGame">リセット</button>
-<button id="newGame">シャッフル & 新しいゲーム</button>
+  <div class="status" id="status"></div>
+  <div class="actions">
+    <button id="btnRestart" class="secondary">リセット</button>
+    <button id="btnNew">シャッフル & 新しいゲーム</button>
+  </div>
+
+  <div class="footer">© 特別支援教材開発研究所</div>
 
 <script>
-let defaultWords = ["うんこ","あんこ","ねこ","いぬ","さる","ぱんだ","ぞう","ごりら"];
-let words = [...defaultWords];
-let deck = [];
-let flipped = [];
-let playerScore = 0;
-let pcScore = 0;
-let playerTurn = true;
-let lock = false;
+(() => {
+  // ====== 設定（ことば編集対応） ======
+  const DEFAULT_WORDS = [
+    "うんこ", "あんこ", "ねこ", "いぬ", "さる", "ぱんだ", "ぞう", "ごりら"
+  ];
+  let WORDS = loadWords(); // ローカルストレージから読み込み（なければデフォルト）
 
-const gameContainer = document.getElementById("game");
-const playerScoreEl = document.getElementById("playerScore");
-const pcScoreEl = document.getElementById("pcScore");
-const wordListEl = document.getElementById("wordList");
+  // 要素参照
+  const boardEl = document.getElementById('board');
+  const youPtsEl = document.getElementById('youPts');
+  const pcPtsEl = document.getElementById('pcPts');
+  const turnBadge = document.getElementById('turnBadge');
+  const statusEl = document.getElementById('status');
+  const btnRestart = document.getElementById('btnRestart');
+  const btnNew = document.getElementById('btnNew');
+  const wordsInput = document.getElementById('wordsInput');
+  const btnApplyWords = document.getElementById('btnApplyWords');
+  const btnResetWords = document.getElementById('btnResetWords');
+  const wordCountPill = document.getElementById('wordCountPill');
 
-function saveWordsToStorage() {
-  localStorage.setItem("shinkeiWords", JSON.stringify(words));
-}
+  // 初期表示に現在のWORDSを反映
+  wordsInput.value = WORDS.join(', ');
+  updateWordCountPill();
 
-function loadWordsFromStorage() {
-  const saved = localStorage.getItem("shinkeiWords");
-  if (saved) {
-    words = JSON.parse(saved);
+  // ゲーム状態
+  let deck = []; // {id, word, matched}
+  let firstPick = null;
+  let secondPick = null;
+  let lockInput = false; // アニメ中/PCの手番などで入力をロック
+  let playerTurn = true; // true=あなた, false=PC
+  let youScore = 0, pcScore = 0;
+
+  function shuffle(array){
+    for(let i=array.length-1; i>0; i--){
+      const j = Math.floor(Math.random() * (i+1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
   }
-}
 
-function renderWordList() {
-  wordListEl.value = words.join("\n");
-}
-
-function initDeck() {
-  deck = [];
-  words.forEach(w => {
-    deck.push(w);
-    deck.push(w);
-  });
-}
-
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+  function buildDeck(){
+    const pairs = WORDS.flatMap((w, idx) => [
+      { id: `${idx}-a`, word: w, matched:false },
+      { id: `${idx}-b`, word: w, matched:false }
+    ]);
+    return shuffle(pairs);
   }
-}
 
-function renderGame() {
-  gameContainer.innerHTML = "";
-  deck.forEach((word, idx) => {
-    const card = document.createElement("div");
-    card.classList.add("card", "hidden");
-    card.dataset.word = word;
-    card.dataset.index = idx;
-    card.textContent = word;
-    card.addEventListener("click", () => onCardClick(card));
-    gameContainer.appendChild(card);
-  });
-}
-
-function onCardClick(card) {
-  if (lock || !playerTurn || !card.classList.contains("hidden")) return;
-  flipCard(card);
-  flipped.push(card);
-  if (flipped.length === 2) {
-    lock = true;
-    setTimeout(checkMatch, 800);
+  function renderBoard(){
+    boardEl.innerHTML = '';
+    deck.forEach(card => {
+      const cardEl = document.createElement('button');
+      cardEl.className = 'card';
+      cardEl.setAttribute('data-id', card.id);
+      cardEl.setAttribute('aria-label', 'カード');
+      cardEl.innerHTML = `
+        <div class="inner">
+          <div class="face back" aria-hidden="${card.matched}">
+            <div class="dot"><span class="mini">ひらがな</span></div>
+          </div>
+          <div class="face front">
+            <div class="txt">${card.word}</div>
+          </div>
+        </div>`;
+      boardEl.appendChild(cardEl);
+    });
   }
-}
 
-function flipCard(card) {
-  card.classList.remove("hidden");
-}
+  function resetState(newDeck=true){
+    deck = newDeck ? buildDeck() : deck.map(c => ({...c, matched:false}));
+    firstPick = null; secondPick = null; lockInput = false; playerTurn = true;
+    youScore = 0; pcScore = 0; updateHud();
+    renderBoard();
+    statusEl.textContent = 'ゲームを開始！あなたの番です。';
+  }
 
-function hideCard(card) {
-  card.classList.add("hidden");
-}
+  function updateHud(){
+    youPtsEl.textContent = youScore;
+    pcPtsEl.textContent = pcScore;
+    turnBadge.textContent = playerTurn ? 'あなたの番' : 'PCの番';
+    turnBadge.style.background = playerTurn ? '#eef2ff' : '#fffbeb';
+    turnBadge.style.color = playerTurn ? '#3730a3' : '#92400e';
+  }
 
-function checkMatch() {
-  const [c1, c2] = flipped;
-  if (c1.dataset.word === c2.dataset.word) {
-    c1.classList.add("matched");
-    c2.classList.add("matched");
-    if (playerTurn) {
-      playerScore++;
-      playerScoreEl.textContent = playerScore;
-      if (!isGameOver()) {
-        lock = false;
-        flipped = [];
-        return; // same player's turn
-      }
-    } else {
-      pcScore++;
-      pcScoreEl.textContent = pcScore;
-      if (!isGameOver()) {
-        lock = false;
-        flipped = [];
-        setTimeout(pcTurn, 500);
-        return;
+  function getCardElById(id){
+    return boardEl.querySelector(`.card[data-id="${id}"]`);
+  }
+
+  function flipUp(card){
+    const el = getCardElById(card.id);
+    if(!el) return;
+    el.classList.add('flipped');
+  }
+  function flipDown(card){
+    const el = getCardElById(card.id);
+    if(!el) return;
+    el.classList.remove('flipped');
+  }
+  function lockCard(card){
+    const el = getCardElById(card.id);
+    if(!el) return;
+    el.classList.add('matched');
+    el.setAttribute('aria-disabled', 'true');
+  }
+
+  function remainingUnmatched(){
+    return deck.filter(c => !c.matched);
+  }
+
+  function checkEnd(){
+    if(remainingUnmatched().length === 0){
+      lockInput = true;
+      const msg = (youScore === pcScore)
+        ? '引き分け！お見事！'
+        : (youScore > pcScore ? 'あなたの勝ち！すごい！' : 'PCの勝ち…次は負けないぞ！');
+      statusEl.textContent = `終了：あなた ${youScore} - PC ${pcScore}｜${msg}`;
+    }
+  }
+
+  async function handlePlayerClick(e){
+    const btn = e.target.closest('.card');
+    if(!btn || lockInput || !playerTurn) return;
+    const id = btn.getAttribute('data-id');
+    const card = deck.find(c => c.id === id);
+    if(!card || card.matched) return;
+
+    // すでに表なら無視
+    if(btn.classList.contains('flipped')) return;
+
+    if(!firstPick){
+      firstPick = card; flipUp(card);
+      return;
+    }
+    if(firstPick && card.id === firstPick.id){
+      return; // 同じカード連打防止
+    }
+
+    secondPick = card; flipUp(card);
+    lockInput = true;
+
+    await wait(500);
+
+    if(firstPick.word === secondPick.word){
+      // ヒット
+      deck = deck.map(c => c.id === firstPick.id || c.id === secondPick.id ? ({...c, matched:true}) : c);
+      lockCard(firstPick); lockCard(secondPick);
+      youScore++; updateHud();
+      statusEl.textContent = 'ナイス！もう一度どうぞ。';
+      // プレイヤーの連続手番
+      firstPick = null; secondPick = null; lockInput = false;
+      checkEnd();
+    }else{
+      // ミス
+      statusEl.textContent = 'ざんねん… PCの番です。';
+      await wait(650);
+      flipDown(firstPick); flipDown(secondPick);
+      firstPick = null; secondPick = null;
+      playerTurn = false; updateHud();
+      await wait(500);
+      pcTurn();
+    }
+  }
+
+  async function pcTurn(){
+    lockInput = true;
+    while(!playerTurn){
+      // ランダムに2枚選ぶ
+      const candidates = remainingUnmatched();
+      if(candidates.length < 2){ break; }
+      const pickA = candidates[Math.floor(Math.random()*candidates.length)];
+      // BはA以外から
+      const rest = candidates.filter(c => c.id !== pickA.id);
+      const pickB = rest[Math.floor(Math.random()*rest.length)];
+
+      statusEl.textContent = 'PCがカードをめくっています…';
+      flipUp(pickA); await wait(450);
+      flipUp(pickB); await wait(550);
+
+      if(pickA.word === pickB.word){
+        deck = deck.map(c => (c.id===pickA.id||c.id===pickB.id) ? ({...c, matched:true}) : c);
+        lockCard(pickA); lockCard(pickB);
+        pcScore++; updateHud();
+        statusEl.textContent = 'PCが当てました。もう一度PCの番。';
+        await wait(600);
+        checkEnd();
+        if(remainingUnmatched().length === 0) break; // 終了
+        // 続けてPCの番
+      }else{
+        statusEl.textContent = 'PCはハズレ。あなたの番です！';
+        await wait(600);
+        flipDown(pickA); flipDown(pickB);
+        playerTurn = true; lockInput = false; updateHud();
+        return; // プレイヤーへ
       }
     }
-  } else {
-    setTimeout(() => {
-      hideCard(c1);
-      hideCard(c2);
-    }, 500);
-    playerTurn = !playerTurn;
+    // 盤面が尽きたとき
+    lockInput = true; checkEnd();
   }
-  flipped = [];
-  lock = false;
-  if (!playerTurn && !isGameOver()) {
-    setTimeout(pcTurn, 500);
+
+  function wait(ms){ return new Promise(res => setTimeout(res, ms)); }
+
+  // ====== Words Editor ロジック ======
+  function parseWordsInput(raw){
+    // カンマ・改行・全角読点で分割、前後空白除去
+    const arr = raw.split(/[,、\n]/).map(s => s.trim()).filter(Boolean);
+    // 重複排除
+    const unique = [...new Set(arr)];
+    return unique;
   }
-}
-
-function pcTurn() {
-  if (playerTurn || isGameOver()) return;
-  let hiddenCards = [...document.querySelectorAll(".card.hidden")];
-  if (hiddenCards.length < 2) return;
-  let choice1 = hiddenCards[Math.floor(Math.random() * hiddenCards.length)];
-  flipCard(choice1);
-  hiddenCards = hiddenCards.filter(c => c !== choice1);
-  let choice2 = hiddenCards[Math.floor(Math.random() * hiddenCards.length)];
-  flipCard(choice2);
-  flipped.push(choice1, choice2);
-  lock = true;
-  setTimeout(checkMatch, 800);
-}
-
-function isGameOver() {
-  return document.querySelectorAll(".card.hidden").length === 0;
-}
-
-document.getElementById("resetGame").addEventListener("click", () => {
-  playerScore = 0; pcScore = 0;
-  playerScoreEl.textContent = playerScore;
-  pcScoreEl.textContent = pcScore;
-  playerTurn = true;
-  lock = false;
-  flipped = [];
-  renderGame();
-});
-
-document.getElementById("newGame").addEventListener("click", () => {
-  playerScore = 0; pcScore = 0;
-  playerScoreEl.textContent = playerScore;
-  pcScoreEl.textContent = pcScore;
-  playerTurn = true;
-  lock = false;
-  flipped = [];
-  initDeck();
-  shuffle(deck);
-  renderGame();
-});
-
-document.getElementById("applyWords").addEventListener("click", () => {
-  let input = wordListEl.value.trim();
-  if (!input) return;
-  let list = input.split(/[\n,]+/).map(w => w.trim()).filter(w => w);
-  if (list.length !== 8) {
-    alert("ことばは8個ちょうど入力してください。");
-    return;
+  function updateWordCountPill(){
+    wordCountPill.textContent = `${WORDS.length}語`;
   }
-  words = list;
-  saveWordsToStorage();
-  initDeck();
-  shuffle(deck);
-  playerScore = 0; pcScore = 0;
-  playerScoreEl.textContent = playerScore;
-  pcScoreEl.textContent = pcScore;
-  playerTurn = true;
-  lock = false;
-  flipped = [];
-  renderGame();
-});
+  function loadWords(){
+    try{
+      const saved = localStorage.getItem('hiragana_pairs_words');
+      if(saved){
+        const arr = JSON.parse(saved);
+        if(Array.isArray(arr) && arr.length === 8) return arr;
+      }
+    }catch(e){}
+    return [...DEFAULT_WORDS];
+  }
+  function saveWords(words){
+    localStorage.setItem('hiragana_pairs_words', JSON.stringify(words));
+  }
 
-document.getElementById("resetWords").addEventListener("click", () => {
-  words = [...defaultWords];
-  saveWordsToStorage();
-  renderWordList();
-  initDeck();
-  shuffle(deck);
-  renderGame();
-});
+  btnApplyWords?.addEventListener('click', () => {
+    const parsed = parseWordsInput(wordsInput.value);
+    if(parsed.length !== 8){
+      statusEl.textContent = `ことばは8語ちょうどにしてください（現在 ${parsed.length} 語）`;
+      return;
+    }
+    WORDS = parsed;
+    saveWords(WORDS);
+    updateWordCountPill();
+    statusEl.textContent = 'ことばを更新しました。新しい並びでゲームを始めます。';
+    resetState(true);
+  });
 
-loadWordsFromStorage();
-renderWordList();
-initDeck();
-shuffle(deck);
-renderGame();
+  btnResetWords?.addEventListener('click', () => {
+    WORDS = [...DEFAULT_WORDS];
+    wordsInput.value = WORDS.join(', ');
+    saveWords(WORDS);
+    updateWordCountPill();
+    statusEl.textContent = 'ことばをデフォルトに戻しました。';
+    resetState(true);
+  });
+
+  // ====== イベント紐付け ======
+  boardEl.addEventListener('click', handlePlayerClick);
+  btnRestart.addEventListener('click', () => {
+    // 同じ並びで再挑戦（マッチ状態だけ解除）
+    deck = deck.map(c => ({...c, matched:false}));
+    renderBoard();
+    firstPick = null; secondPick = null; lockInput = false; playerTurn = true;
+    youScore = 0; pcScore = 0; updateHud();
+    statusEl.textContent = 'リセットしました。あなたの番から再開！';
+  });
+  btnNew.addEventListener('click', () => resetState(true));
+
+  // 初期化
+  resetState(true);
+})();
 </script>
-
 </body>
 </html>
